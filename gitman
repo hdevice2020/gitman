@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+
+import os
+import json
+import requests
+import keyring
+from rich.console import Console
+from rich.table import Table
+from rich.prompt import Prompt
+from rich import print
+from getpass import getpass
+
+# Constants
+KEYRING_SERVICE = "github_manager"
+TOKEN_KEY = "access_token"
+
+# Initialize console for rich output
+console = Console()
+
+# Function to get GitHub token from keyring
+def get_github_token():
+    try:
+        return keyring.get_password(KEYRING_SERVICE, TOKEN_KEY)
+    except Exception as e:
+        print(f"[red]Error retrieving token: {e}[/red]")
+        return None
+
+# Function to set GitHub token in keyring
+def set_github_token():
+    token = getpass("Enter your GitHub token: ")
+    keyring.set_password(KEYRING_SERVICE, TOKEN_KEY, token)
+    print("[green]Token stored successfully![/green]")
+
+# Function to set GitHub username
+def set_github_username():
+    username = Prompt.ask("Enter your GitHub username")
+    with open("username.txt", "w") as file:
+        file.write(username)
+    print("[green]Username stored successfully![/green]")
+
+# Function to get GitHub username
+def get_github_username():
+    if os.path.exists("username.txt"):
+        with open("username.txt", "r") as file:
+            return file.read().strip()
+    return None
+
+# Function to list all repositories
+def list_repositories(username=None, token=None):
+    if not username:
+        username = get_github_username()
+    if not token:
+        token = get_github_token()
+
+    if not token or not username:
+        print("[red]GitHub token or username not set.[/red]")
+        return
+
+    url = f"https://api.github.com/user/repos"
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json',
+    }
+
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        repos = response.json()
+        table = Table(title="Repositories")
+        table.add_column("Name", style="cyan")
+        table.add_column("Visibility", style="magenta")
+        table.add_column("Description", style="green")
+
+        for repo in repos:
+            table.add_row(repo['name'], "Private" if repo['private'] else "Public", repo.get('description', ''))
+
+        console.print(table)
+    else:
+        print(f"[red]Failed to retrieve repositories. Status code: {response.status_code}[/red]")
+
+# Function to create a new repository
+def create_repository(username=None, token=None):
+    if not username:
+        username = get_github_username()
+    if not token:
+        token = get_github_token()
+
+    if not token or not username:
+        print("[red]GitHub token or username not set.[/red]")
+        return
+
+    name = Prompt.ask("Enter the name of the new repository")
+    description = Prompt.ask("Enter a description (optional)", default="")
+    private = Prompt.ask("Should the repository be private? [y/n]", default="n").lower() == "y"
+
+    url = "https://api.github.com/user/repos"
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json',
+    }
+    data = {
+        'name': name,
+        'description': description,
+        'private': private
+    }
+
+    response = requests.post(url, headers=headers, json=data)
+
+    if response.status_code == 201:
+        print(f"[green]Repository '{name}' created successfully![/green]")
+    else:
+        print(f"[red]Failed to create repository. Status code: {response.status_code}[/red]")
+
+# Function to modify a repository
+def modify_repository(username=None, token=None):
+    if not username:
+        username = get_github_username()
+    if not token:
+        token = get_github_token()
+
+    if not token or not username:
+        print("[red]GitHub token or username not set.[/red]")
+        return
+
+    repo_name = Prompt.ask("Enter the name of the repository to modify")
+    new_name = Prompt.ask("Enter the new name for the repository (leave blank to keep current name)", default="")
+    description = Prompt.ask("Enter a new description (leave blank to keep current description)", default="")
+    private = Prompt.ask("Should the repository be private? [y/n] (leave blank to keep current visibility)", default="").lower()
+
+    url = f"https://api.github.com/repos/{username}/{repo_name}"
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json',
+    }
+    data = {}
+    if new_name:
+        data['name'] = new_name
+    if description:
+        data['description'] = description
+    if private:
+        data['private'] = private == 'y'
+
+    response = requests.patch(url, headers=headers, json=data)
+
+    if response.status_code == 200:
+        print(f"[green]Repository '{repo_name}' modified successfully![/green]")
+    else:
+        print(f"[red]Failed to modify repository. Status code: {response.status_code}[/red]")
+
+# Function to delete a repository
+def delete_repository(username=None, token=None):
+    if not username:
+        username = get_github_username()
+    if not token:
+        token = get_github_token()
+
+    if not token or not username:
+        print("[red]GitHub token or username not set.[/red]")
+        return
+
+    repo_name = Prompt.ask("Enter the name of the repository to delete")
+    confirm = Prompt.ask(f"Are you sure you want to delete the repository '{repo_name}'? [y/n]", default="n").lower()
+
+    if confirm != 'y':
+        print("[yellow]Repository deletion cancelled.[/yellow]")
+        return
+
+    url = f"https://api.github.com/repos/{username}/{repo_name}"
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json',
+    }
+
+    response = requests.delete(url, headers=headers)
+
+    if response.status_code == 204:
+        print(f"[green]Repository '{repo_name}' deleted successfully![/green]")
+    else:
+        print(f"[red]Failed to delete repository. Status code: {response.status_code}[/red]")
+
+# Function to clone a repository
+def clone_repository():
+    repo_url = Prompt.ask("Enter the URL of the repository to clone")
+    os.system(f"git clone {repo_url}")
+
+# Function to pull a repository
+def pull_repository():
+    repo_dir = Prompt.ask("Enter the directory of the repository to pull")
+    os.chdir(repo_dir)
+    os.system("git pull")
+
+# Function to add a remote
+def add_remote():
+    repo_dir = Prompt.ask("Enter the directory of the repository")
+    remote_name = Prompt.ask("Enter the remote name")
+    remote_url = Prompt.ask("Enter the remote URL")
+    os.chdir(repo_dir)
+    os.system(f"git remote add {remote_name} {remote_url}")
+
+# Function to create a branch
+def create_branch():
+    repo_dir = Prompt.ask("Enter the directory of the repository")
+    branch_name = Prompt.ask("Enter the branch name")
+    os.chdir(repo_dir)
+    os.system(f"git checkout -b {branch_name}")
+
+# Function to push a repository
+def push_repository():
+    repo_dir = Prompt.ask("Enter the directory of the repository")
+    branch_name = Prompt.ask("Enter the branch name to push")
+    os.chdir(repo_dir)
+    os.system(f"git push origin {branch_name}")
+
+# Main function
+def main():
+    username = get_github_username()
+    if not username:
+        print("[yellow]GitHub username not found. Please enter it now.[/yellow]")
+        set_github_username()
+
+    token = get_github_token()
+    if not token:
+        print("[yellow]GitHub token not found. Please enter it now.[/yellow]")
+        set_github_token()
+
+    while True:
+        console.print("\n[bold]GitHub Manager[/bold]")
+        console.print("[1] List all repositories")
+        console.print("[2] Create new repository")
+        console.print("[3] Modify repository")
+        console.print("[4] Delete repository")
+        console.print("[5] Clone a repository")
+        console.print("[6] Pull repository")
+        console.print("[7] Add remote")
+        console.print("[8] Create branch")
+        console.print("[9] Push repository")
+        console.print("[10] Set a different username and token")
+        console.print("[11] Quit")
+
+        choice = Prompt.ask("Enter your choice [1/2/3/4/5/6/7/8/9/10/11]")
+
+        if choice == "1":
+            list_repositories()
+        elif choice == "2":
+            create_repository()
+        elif choice == "3":
+            modify_repository()
+        elif choice == "4":
+            delete_repository()
+        elif choice == "5":
+            clone_repository()
+        elif choice == "6":
+            pull_repository()
+        elif choice == "7":
+            add_remote()
+        elif choice == "8":
+            create_branch()
+        elif choice == "9":
+            push_repository()
+        elif choice == "10":
+            username = Prompt.ask("Enter the GitHub username")
+            token = getpass("Enter the GitHub token")
+            list_repositories(username, token)
+        elif choice == "11":
+            print("[bold green]Exiting...[/bold green]")
+            break
+        else:
+            print("[red]Invalid choice, please select a valid option.[/red]")
+
+if __name__ == "__main__":
+    main()
