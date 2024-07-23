@@ -9,6 +9,7 @@ from rich.table import Table
 from rich.prompt import Prompt
 from rich import print
 from getpass import getpass
+from datetime import datetime
 
 # Constants
 KEYRING_SERVICE = "github_manager"
@@ -45,6 +46,19 @@ def get_github_username():
             return file.read().strip()
     return None
 
+# Function to get the number of commits
+def get_number_of_commits(owner, repo, token):
+    url = f"https://api.github.com/repos/{owner}/{repo}/commits"
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json',
+    }
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        return len(response.json())
+    else:
+        return "N/A"
+
 # Function to list all repositories
 def list_repositories(username=None, token=None):
     if not username:
@@ -70,9 +84,13 @@ def list_repositories(username=None, token=None):
         table.add_column("Name", style="cyan")
         table.add_column("Visibility", style="magenta")
         table.add_column("Description", style="green")
+        table.add_column("Last Updated", style="yellow")
+        table.add_column("Commits", style="blue")
 
         for repo in repos:
-            table.add_row(repo['name'], "Private" if repo['private'] else "Public", repo.get('description', ''))
+            last_updated = datetime.strptime(repo['updated_at'], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d %H:%M:%S")
+            commits = get_number_of_commits(username, repo['name'], token)
+            table.add_row(repo['name'], "Private" if repo['private'] else "Public", repo.get('description', ''), last_updated, str(commits))
 
         console.print(table)
     else:
@@ -258,9 +276,9 @@ def main():
         elif choice == "9":
             push_repository()
         elif choice == "10":
-            username = Prompt.ask("Enter the GitHub username")
-            token = getpass("Enter the GitHub token")
-            list_repositories(username, token)
+            print("[yellow]Setting new GitHub username and token...[/yellow]")
+            set_github_username()
+            set_github_token()
         elif choice == "11":
             print("[bold green]Exiting...[/bold green]")
             break
